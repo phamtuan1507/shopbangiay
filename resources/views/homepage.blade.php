@@ -1,5 +1,5 @@
 {{-- Tất các các page cần extends từ master.blade.php --}}
-@extends('layout.master')
+@extends('dashboard')
 
 {{-- Đặt title cho page --}}
 @section('title', 'Trang chủ')
@@ -12,6 +12,6 @@
 
 @section('content')
     <main class="main">
-        <h1>h1. Bootstrap heading</h1>
+        
     </main>
 @endsection
