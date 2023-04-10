@@ -1,0 +1,86 @@
+---
+kind: pipeline
+type: docker
+name: default
+steps:
+  - name: Install PHP Packages
+    image: webpress/php:8.1-alpine
+    commands:
+      - composer install
+
+  - name: Build assets
+    image: node:18-alpine
+    commands:
+      - node -v
+      - npm -v
+      - yarn --version
+      - yarn config set cache-folder /yarn
+      - yarn install --pure-lockfile
+      - yarn prod
+
+  - name: compress
+    image: busybox
+    commands:
+      - tar -zcvf ${DRONE_COMMIT}.tar.gz --exclude='./.git' --exclude='./node_modules' .
+
+  - name: rsync
+    image: drillster/drone-rsync
+    settings:
+      user:
+        from_secret: DEV_SERVER_USER
+      key:
+        from_secret: DEV_SERVER_KEY
+      hosts:
+        - 207.148.78.161
+      port: 1080
+      source: ./${DRONE_COMMIT}.tar.gz
+      target: /var/www/web/tmp
+    when:
+      branch:
+        - staging/*
+        - release/*
+
+  - name: deploy:staging
+    image: webpress/php:7.4-alpine
+    commands:
+      - export DOMAIN=$(echo $DRONE_REPO | cut -d "/" -f 2)-s-$(echo $DRONE_BRANCH | cut -d "/" -f 2).webpress.com.vn
+      - echo $DOMAIN
+      - 'echo "{\"domain\": \"$${DOMAIN}\",\"fromFile\":\"${DRONE_COMMIT}.tar.gz\",\"runPostInstallScript\": false}" > payload.json'
+      - cat payload.json
+      - 'echo curl -L -X POST \"http://207.148.78.161/agent/api/application/deploy\" -H \"Content-Type: application/json\" -d @payload.json | sh'
+    when:
+      branch:
+        - staging/*
+
+  - name: deploy:release
+    image: webpress/php:7.4-alpine
+    commands:
+      - export DOMAIN=$(echo $DRONE_REPO | cut -d "/" -f 2)-$(echo $DRONE_BRANCH | cut -d "/" -f 2).webpress.com.vn
+      - echo $DOMAIN
+      - 'echo "{\"domain\": \"$${DOMAIN}\",\"fromFile\":\"${DRONE_COMMIT}.tar.gz\",\"runPostInstallScript\": false}" > payload.json'
+      - cat payload.json
+      - 'echo curl -L -X POST \"http://207.148.78.161/agent/api/application/deploy\" -H \"Content-Type: application/json\" -d @payload.json | sh'
+    when:
+      branch:
+        - release/*
+
+  - name: domain
+    image: webpress/drone-cloudflare
+    settings:
+      target: sv3.vultr.webpress.com.vn
+      cloudflare_email:
+        from_secret: CLOUDFLARE_EMAIL
+      cloudflare_token:
+        from_secret: CLOUDFLARE_TOKEN
+      cloudflare_zone_id:
+        from_secret: CLOUDFLARE_ZONE_ID
+      proxied: true
+    when:
+      branch:
+        - staging/*
+        - release/*
+
+trigger:
+  branch:
+    - staging/*
+    - release/*
